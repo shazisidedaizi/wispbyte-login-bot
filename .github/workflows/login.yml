@@ -1,0 +1,30 @@
+name: Searcade Auto Login
+
+on:
+  schedule:
+    - cron: '0 20 */2 * *'  # 每两天 UTC 20:00（北京时间 4:00）
+  workflow_dispatch:
+
+jobs:
+  login:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          pip install playwright aiohttp
+          playwright install chromium --with-deps
+
+      - name: Run login script
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          LOGIN_ACCOUNTS: ${{ secrets.LOGIN_ACCOUNTS }}
+        run: python login.py
