@@ -6,7 +6,7 @@ from datetime import datetime
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 
 # ===================== 配置 =====================
-LOGIN_URL = "https://searcade.com/en/admin/servers/3759"
+LOGIN_URL = "https://wispbyte.com/client/servers"
 
 # ===================== Telegram 通知 =====================
 async def tg_notify(message: str):
