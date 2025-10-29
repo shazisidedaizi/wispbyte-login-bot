@@ -6,7 +6,7 @@ from datetime import datetime
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 
 # ===================== 配置 =====================
-LOGIN_URL = "https://wispbyte.com/client/servers"
+LOGIN_URL = "https://wispbyte.com/client/login"   # 登录页（不是直接服务器页）
 
 # ===================== Telegram 通知 =====================
 async def tg_notify(message: str):
@@ -57,8 +57,8 @@ def build_report(results, start_time, end_time):
     failed  = [r for r in results if not r["success"]]
 
     lines = [
-        "Searcade 自动登录报告",
-        f"目标: <a href='{LOGIN_URL}'>服务器 #3759</a>",
+        "Wispbyte 自动登录报告",
+        f"目标: <a href='https://wispbyte.com/client'>控制面板</a>",
         f"时间: {start_time} → {end_time}",
         f"结果: <b>{len(success)} 成功</b> | <b>{len(failed)} 失败</b>",
         ""
@@ -99,33 +99,46 @@ async def login_one(email: str, password: str):
         result = {"email": email, "success": False}
 
         try:
-            print(f"[{email}] 访问后台...")
+            print(f"[{email}] 正在打开登录页...")
             await page.goto(LOGIN_URL, wait_until="networkidle")
-            current_url = page.url
-            print(f"[{email}] 当前URL: {current_url}")
 
-            if "servers/3759" in current_url and "login" not in current_url.lower():
+            # 检查是否已登录
+            if "client" in page.url and "login" not in page.url:
                 print(f"[{email}] 已登录！")
                 result["success"] = True
                 return result
 
-            await page.wait_for_selector('button:has-text("Login")', timeout=15000)
-            print(f"[{email}] 检测到登录页")
+            # 等待登录表单
+            await page.wait_for_selector('button:has-text("Log In")', timeout=15000)
+            print(f"[{email}] 检测到登录表单")
 
-            await page.fill('input[type="text"] >> nth=0', email)
-            await page.fill('input[type="password"] >> nth=0', password)
-            await page.click('button:has-text("Login")')
-            print(f"[{email}] 提交登录")
+            # 填写账号密码
+            await page.fill('input[placeholder="Email or Username"]', email)
+            await page.fill('input[placeholder="Password"]', password)
 
-            await page.wait_for_url("**/servers/3759", timeout=20000)
-            print(f"[{email}] 登录成功！")
+            # --- 新增：点击 “确认您是真人” 复选框 ---
+            try:
+                await page.wait_for_selector('text=确认您是真人', timeout=15000)
+                await page.click('text=确认您是真人')
+                print(f"[{email}] 已勾选 '确认您是真人'")
+                await asyncio.sleep(2)  # 等待 Cloudflare 验证（关键！）
+            except Exception as e:
+                print(f"[{email}] 未检测到复选框或已自动通过: {e}")
+
+            # 点击登录按钮
+            await page.click('button:has-text("Log In")')
+            print(f"[{email}] 已点击登录按钮")
+
+            # 等待跳转到仪表板
+            await page.wait_for_url("**/client**", timeout=30000)
+            print(f"[{email}] 登录成功，进入控制面板！")
             result["success"] = True
 
         except Exception as e:
             screenshot = f"error_{email.replace('@', '_')}_{int(datetime.now().timestamp())}.png"
             await page.screenshot(path=screenshot, full_page=True)
             await tg_notify_photo(screenshot,
-                caption=f"Searcade 登录失败\n"
+                caption=f"Wispbyte 登录失败\n"
                         f"账号: <code>{email}</code>\n"
                         f"错误: <i>{str(e)[:200]}</i>\n"
                         f"URL: {page.url}"
@@ -135,7 +148,6 @@ async def login_one(email: str, password: str):
             await context.close()
             await browser.close()
             return result
-
 # ===================== 主流程 =====================
 async def main():
     start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
