@@ -2,13 +2,13 @@ name: Wispbyte Auto Login
 
 on:
   schedule:
-    - cron: '0 20 */2 * *'  # 每两天 UTC 20:00（北京时间 4:00）
+    - cron: '0 20 */2 * *'   # 每两天 UTC 20:00（北京时间 4:00）
   workflow_dispatch:
 
 jobs:
   login:
     runs-on: ubuntu-latest
-    timeout-minutes: 10   # 10 分钟后自动取消
+    timeout-minutes: 10    # 10 分钟后自动取消
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -19,21 +19,46 @@ jobs:
           python-version: '3.11'
 
       - name: Install Python dependencies
-        timeout-minutes: 5   # 安装给 5 分钟
+        timeout-minutes: 5    # 安装给 5 分钟
         run: |
           echo "开始安装依赖（pip + playwright）"
-          set -e  # 任一命令失败就退出
+          set -e
           pip install playwright aiohttp
           playwright install chromium --with-deps
           echo "依赖安装完成"
 
       - name: Run login script
-        timeout-minutes: 5   # 只给脚本 5 分钟
+        timeout-minutes: 5    # 脚本 5 分钟
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           LOGIN_ACCOUNTS: ${{ secrets.LOGIN_ACCOUNTS }}
         run: |
-          echo "开始执行 login.py（最多 8 分钟）"
-          timeout 7m python login.py && echo "login.py 成功完成" || echo "脚本执行失败或被超时中断"
+          echo "开始执行 login.py（最多 5 分钟）"
+          timeout 4m python login.py && echo "login.py 成功完成" || echo "脚本执行失败或被超时中断"
           echo "本 step 结束"
+
+  # ==================== 超时/失败通知 ====================
+  notify-failure:
+    needs: login
+    if: needs.login.result == 'cancelled' || needs.login.result == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Telegram Alert
+        uses: appleboy/telegram-action@v1.0.0
+        with:
+          to: ${{ secrets.TG_CHAT_ID }}
+          token: ${{ secrets.TG_BOT_TOKEN }}
+          message: |
+            *GitHub Actions 异常*
+
+            状态：`{{ needs.login.result }}`
+            {{ '超时自动取消（10 分钟）' if needs.login.result == 'cancelled' else '脚本执行失败' }}
+
+            查看日志：
+            https://github.com/{{ github.repository }}/actions/runs/{{ github.run_id }}
+
+            回复 `/retry` 或点下方按钮手动重试
+          reply_markup: |
+            {"inline_keyboard": [[{"text": "重试", "callback_data": "retry_workflow"}]]}
+          parse_mode: Markdown
