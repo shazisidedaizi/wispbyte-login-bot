@@ -197,6 +197,12 @@ async def main():
 
 # ===================== 启动 =====================
 if __name__ == "__main__":
-    print(f"[{datetime.datetime.now()}] login.py 开始运行")
-    print(f"Python: {sys.version.split()[0]}, Accounts: {len(os.getenv('LOGIN_ACCOUNTS','').split(','))}")
+    import sys
+    import datetime
+
+    print(f"[{datetime.datetime.now()}] login.py 开始运行", file=sys.stderr)
+    accounts = os.getenv('LOGIN_ACCOUNTS', '').strip()
+    count = len([a for a in accounts.split(',') if ':' in a]) if accounts else 0
+    print(f"Python: {sys.version.split()[0]}, 有效账号数: {count}", file=sys.stderr)
+
     asyncio.run(main())
