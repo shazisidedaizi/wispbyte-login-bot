@@ -197,4 +197,6 @@ async def main():
 
 # ===================== 启动 =====================
 if __name__ == "__main__":
+    print(f"[{datetime.datetime.now()}] login.py 开始运行")
+    print(f"Python: {sys.version.split()[0]}, Accounts: {len(os.getenv('LOGIN_ACCOUNTS','').split(','))}")
     asyncio.run(main())
