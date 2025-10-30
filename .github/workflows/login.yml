@@ -1,5 +1,5 @@
 name: Wispbyte Auto Login
-
+timeout-minutes: 30
 on:
   schedule:
     - cron: '0 20 */2 * *'
