@@ -2,13 +2,13 @@ name: Wispbyte Auto Login
 
 on:
   schedule:
-    - cron: '0 20 */2 * *'  # 每两天 UTC 20:00（北京时间 4:00）
+    - cron: '0 20 */2 * *'
   workflow_dispatch:
 
 jobs:
   login:
     runs-on: ubuntu-latest
-    timeout-minutes: 15  # 增加到 15 分钟，避免安装超时
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -18,11 +18,8 @@ jobs:
         with:
           to: ${{ secrets.TG_CHAT_ID }}
           token: ${{ secrets.TG_BOT_TOKEN }}
-          message: |
-           " *Wispbyte 任务已启动！*
-            预计 8–12 分钟完成
-            查看：https://github.com/{{ github.repository }}/actions/runs/{{ github.run_id }}"
-          format: Markdown
+          message: "*Wispbyte 任务已启动！*\n预计 8–12 分钟完成\n查看: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          format: markdown
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -45,29 +42,4 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           LOGIN_ACCOUNTS: ${{ secrets.LOGIN_ACCOUNTS }}
         run: |
-          echo "开始执行 login.py（最多 5 分钟）"
-          timeout 5m python login.py && echo "login.py 成功完成" || echo "脚本执行失败或被超时中断"
-          echo "本 step 结束"
-
-  # 失败/超时通知
-  notify-failure:
-    needs: login
-    if: needs.login.result == 'cancelled' || needs.login.result == 'failure'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Send Telegram Alert
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TG_CHAT_ID }}
-          token: ${{ secrets.TG_BOT_TOKEN }}
-          message: |
-            *GitHub Actions 异常*
-
-            状态：`{{ needs.login.result }}`
-            {{ '超时自动取消' if needs.login.result == 'cancelled' else '脚本执行失败' }}
-
-            查看日志：
-            https://github.com/{{ github.repository }}/actions/runs/{{ github.run_id }}
-
-            发 `/retry` 手动重试
-          parse_mode: Markdown
+          echo "开始
