@@ -42,4 +42,19 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           LOGIN_ACCOUNTS: ${{ secrets.LOGIN_ACCOUNTS }}
         run: |
-          echo "开始
+          echo "开始执行 login.py（最多 5 分钟）"
+          timeout 5m python login.py && echo "login.py 成功完成" || echo "脚本执行失败或被超时中断"
+          echo "本 step 结束"
+
+  notify-failure:
+    needs: login
+    if: needs.login.result == 'cancelled' || needs.login.result == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Telegram Alert
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TG_CHAT_ID }}
+          token: ${{ secrets.TG_BOT_TOKEN }}
+          message: "*GitHub Actions 异常*\n\n状态：`${{ needs.login.result }}`\n${{ needs.login.result == 'cancelled' && '超时自动取消' || '脚本执行失败' }}\n\n查看日志：\nhttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\n\n发 `/retry` 手动重试"
+          format: markdown
