@@ -22,7 +22,7 @@ jobs:
             *Wispbyte 任务已启动！*
             预计 8–12 分钟完成
             查看：https://github.com/{{ github.repository }}/actions/runs/{{ github.run_id }}
-          parse_mode: Markdown
+          format: Markdown
 
       - name: Set up Python
         uses: actions/setup-python@v5
