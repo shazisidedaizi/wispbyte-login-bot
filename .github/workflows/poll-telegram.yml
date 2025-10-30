@@ -2,66 +2,49 @@ name: Poll Telegram for Commands
 
 on:
   schedule:
-    - cron: '* * * * *'
+    - cron: '* * * * *'  # 每分钟
   workflow_dispatch:
 
 jobs:
   poll:
     runs-on: ubuntu-latest
-    env:
-      TELEGRAM_OFFSET: ${{ vars.TELEGRAM_OFFSET || '0' }}
     steps:
-      - name: Load Offset
-        id: load
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get Offset from Secret
+        id: offset
+        env:
+          TELEGRAM_OFFSET: ${{ secrets.TELEGRAM_OFFSET }}
         run: |
-          OFFSET="${{ env.TELEGRAM_OFFSET }}"
+          OFFSET="${TELEGRAM_OFFSET:-0}"
           echo "Current offset: $OFFSET"
           echo "offset=$OFFSET" >> $GITHUB_OUTPUT
 
-      - name: Get Updates
+      - name: Get Telegram Updates
         id: updates
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         run: |
-          OFFSET=${{ steps.load.outputs.offset }}
-          echo "Polling from offset: $OFFSET"
-          UPDATES=$(curl -s "https://api.telegram.org/bot$TG_BOT_TOKEN/getUpdates?offset=$OFFSET&limit=20")
+          OFFSET=${{ steps.offset.outputs.offset }}
+          echo "Polling Telegram from offset: $OFFSET"
+          UPDATES=$(curl -s "https://api.telegram.org/bot$TG_BOT_TOKEN/getUpdates?offset=$OFFSET&limit=10")
           echo "updates<<EOF" >> $GITHUB_OUTPUT
           echo "$UPDATES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-          MAX_ID=$(echo "$UPDATES" | jq -r '.result[].update_id' | sort -nr | head -1)
+
+          # 计算新 offset
+          MAX_ID=$(echo "$UPDATES" | jq -r '.result[]? | .update_id' | sort -nr | head -1)
           if [ "$MAX_ID" != "null" ] && [ -n "$MAX_ID" ]; then
             NEW_OFFSET=$((MAX_ID + 1))
-            echo "New offset: $NEW_OFFSET"
-            echo "TELEGRAM_OFFSET=$NEW_OFFSET" >> $GITHUB_ENV
+            echo "new_offset=$NEW_OFFSET" >> $GITHUB_OUTPUT
+            echo "Found new messages!"
           else
-            echo "No new updates"
+            echo "new_offset=$OFFSET" >> $GITHUB_OUTPUT
+            echo "No new messages"
           fi
 
-      - name: Update Offset in Repository Variables
-        if: env.TELEGRAM_OFFSET != steps.load.outputs.offset
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const newOffset = process.env.NEW_OFFSET;
-            await github.rest.actions.createOrUpdateRepoSecret({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              secret_name: 'TELEGRAM_OFFSET',
-              key_id: (await github.rest.actions.listRepoSecrets({owner: context.repo.owner, repo: context.repo.repo})).data.secrets.find(s => s.name === 'TELEGRAM_OFFSET')?.key_id,
-              encrypted_value: btoa(newOffset)
-            }).catch(() => {
-              // If secret doesn't exist, create it
-              return github.rest.actions.createRepoSecret({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                secret_name: 'TELEGRAM_OFFSET',
-                key_id: (await github.rest.actions.getPublicKey({owner: context.repo.owner, repo: context.repo.repo})).data.key_id,
-                encrypted_value: btoa(newOffset)
-              });
-            });
-
-      - name: Respond to /start
+      - name: Respond /start
         if: contains(steps.updates.outputs.updates, '/start')
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -69,29 +52,52 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
             -d chat_id="$TG_CHAT_ID" \
-            -d text="Bot 已就绪！发 /retry 触发任务" \
+            -d text="✅ Bot 已就绪！发 **/retry** 触发任务" \
             -d parse_mode="Markdown"
 
-      - name: Trigger on /retry
+      - name: Trigger /retry
         if: contains(steps.updates.outputs.updates, '/retry')
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
-          echo "检测到 /retry，触发主任务"
+          echo "🚀 检测到 /retry，触发主任务..."
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer $GH_PAT" \
             -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository }}/actions/workflows/wispbyte-auto-login.yml/dispatches \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/wispbyte-auto-login.yml/dispatches" \
             -d '{"ref":"main"}')
+          
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           if [ "$HTTP_CODE" = "204" ]; then
             curl -s -X POST "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
               -d chat_id="$TG_CHAT_ID" \
-              -d text="Workflow 已触发重试！"
+              -d text="✅ **Workflow 已触发重试！**\n预计 8-12 分钟完成" \
+              -d parse_mode="Markdown"
           else
             curl -s -X POST "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
               -d chat_id="$TG_CHAT_ID" \
-              -d text="触发失败：HTTP $HTTP_CODE\n请检查 GH_PAT 权限"
+              -d text="❌ **触发失败**：HTTP $HTTP_CODE\n请检查 GH_PAT 权限" \
+              -d parse_mode="Markdown"
           fi
+
+      - name: Update Offset Secret
+        if: steps.offset.outputs.offset != steps.updates.outputs.new_offset
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          NEW_OFFSET="${{ steps.updates.outputs.new_offset }}"
+          echo "Updating TELEGRAM_OFFSET to: $NEW_OFFSET"
+          
+          # 使用 GitHub CLI 更新 Secret
+          echo "$GH_PAT" | gh auth login --with-token
+          gh secret set TELEGRAM_OFFSET -b "$NEW_OFFSET" --repo ${{ github.repository }}
+
+      - name: Debug Info
+        if: always()
+        run: |
+          echo "=== DEBUG ==="
+          echo "Old offset: ${{ steps.offset.outputs.offset }}"
+          echo "New offset: ${{ steps.updates.outputs.new_offset }}"
+          echo "Updates preview: ${{ steps.updates.outputs.updates }}"
