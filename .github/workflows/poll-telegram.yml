@@ -12,6 +12,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 关键修复：continue-on-error + 默认值
       - name: Download last_offset.txt
         uses: actions/download-artifact@v4
         continue-on-error: true
@@ -19,15 +20,17 @@ jobs:
           name: telegram-offset
           path: .
 
-      - name: Load Offset
-        id: load
+      # 关键修复：如果没下载到文件，创建默认值
+      - name: Initialize Offset
+        id: init
         run: |
           if [ -f "last_offset.txt" ]; then
             OFFSET=$(cat last_offset.txt)
-            echo "Loaded offset: $OFFSET"
+            echo "Loaded existing offset: $OFFSET"
           else
             OFFSET=0
-            echo "No offset file, starting from 0"
+            echo "0" > last_offset.txt
+            echo "Created new offset: 0"
           fi
           echo "offset=$OFFSET" >> $GITHUB_OUTPUT
 
@@ -36,7 +39,8 @@ jobs:
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         run: |
-          OFFSET=${{ steps.load.outputs.offset }}
+          OFFSET=${{ steps.init.outputs.offset }}
+          echo "Polling from offset: $OFFSET"
           UPDATES=$(curl -s "https://api.telegram.org/bot$TG_BOT_TOKEN/getUpdates?offset=$OFFSET&limit=20")
           echo "updates<<EOF" >> $GITHUB_OUTPUT
           echo "$UPDATES" >> $GITHUB_OUTPUT
@@ -48,19 +52,15 @@ jobs:
             echo "new_offset=$OFFSET" >> $GITHUB_ENV
           fi
 
-      - name: Save Offset to Artifact
-        if: always()
-        run: |
-          echo "${{ env.new_offset }}" > last_offset.txt
-          echo "Saved new offset: ${{ env.new_offset }}"
-
+      # 关键修复：强制上传 artifact
       - name: Upload Offset Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: telegram-offset
           path: last_offset.txt
-          retention-days: 1
+          retention-days: 7  # 保留 7 天
+          if-no-files-found: error
 
       - name: Respond to /start
         if: contains(steps.updates.outputs.updates, '/start')
@@ -95,3 +95,9 @@ jobs:
               -d chat_id="$TG_CHAT_ID" \
               -d text="触发失败：HTTP $HTTP_CODE"
           fi
+
+      - name: Debug
+        if: always()
+        run: |
+          echo "Final offset: ${{ env.new_offset }}"
+          echo "Artifact should now be available for next run"
