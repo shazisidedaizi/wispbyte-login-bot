@@ -35,7 +35,7 @@ jobs:
           echo "开始安装依赖（预计 3–6 分钟）"
           set -e
           pip install --quiet playwright aiohttp
-          playwright install --quiet chromium --with-deps
+          playwright install chromium --with-deps
           echo "依赖安装完成"
 
       - name: Run login script
