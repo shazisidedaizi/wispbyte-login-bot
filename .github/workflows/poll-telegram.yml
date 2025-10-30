@@ -1,0 +1,60 @@
+# .github/workflows/poll-telegram.yml
+name: Poll Telegram for Commands
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # 每 5 分钟运行一次
+  workflow_dispatch:
+
+jobs:
+  check-commands:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Latest Updates
+        id: get_updates
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          # 获取最近 10 条更新
+          UPDATES=$(curl -s "https://api.telegram.org/bot$TG_BOT_TOKEN/getUpdates?limit=10&offset=-1")
+          echo "updates<<EOF" >> $GITHUB_OUTPUT
+          echo "$UPDATES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Process /start
+        if: contains(steps.get_updates.outputs.updates, '/start')
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
+            -d chat_id="$TG_CHAT_ID" \
+            -d text="Bot 已就绪！发 /retry 重试登录任务" \
+            -d parse_mode="Markdown"
+
+      - name: Process /retry or Button
+        if: contains(steps.get_updates.outputs.updates, '/retry') || contains(steps.get_updates.outputs.updates, 'retry_workflow')
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          # 触发主任务
+          curl -X POST \
+            -H "Authorization: Bearer $GH_PAT" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/wispbyte-auto-login.yml/dispatches \
+            -d '{"ref":"main"}'
+
+          # 回复用户
+          curl -s -X POST "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
+            -d chat_id="$TG_CHAT_ID" \
+            -d text="Workflow 已触发重试！"
+
+      - name: Clear Processed Updates
+        if: always()
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          # 可选：清除已处理的消息，避免重复
+          curl -s "https://api.telegram.org/bot$TG_BOT_TOKEN/getUpdates?offset=999999999" > /dev/null
