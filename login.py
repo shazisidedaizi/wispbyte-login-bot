@@ -5,10 +5,8 @@ import aiohttp
 from datetime import datetime
 from playwright.async_api import async_playwright
 
-# ===================== 配置 =====================
 LOGIN_URL = "https://wispbyte.com/client/servers"
 
-# ===================== Telegram 通知 =====================
 async def tg_notify(message: str):
     token = os.getenv("TG_BOT_TOKEN")
     chat_id = os.getenv("TG_CHAT_ID")
@@ -51,7 +49,6 @@ async def tg_notify_photo(photo_path: str, caption: str = ""):
             except:
                 pass
 
-# ===================== 报告生成 =====================
 def build_report(results, start_time, end_time):
     success = [r for r in results if r["success"]]
     failed  = [r for r in results if not r["success"]]
@@ -75,25 +72,16 @@ def build_report(results, start_time, end_time):
 
     return "\n".join(lines)
 
-# ===================== 单账号登录 =====================
 async def login_one(email: str, password: str):
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--disable-extensions",
-                "--window-size=1920,1080",
-                "--disable-blink-features=AutomationControlled"
-            ]
-        )
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
-        )
+        browser = await p.chromium.launch(headless=True, args=[
+            "--no-sandbox", "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage", "--disable-gpu",
+            "--disable-extensions", "--window-size=1920,1080",
+            "--disable-blink-features=AutomationControlled"
+        ])
+        context = await browser.new_context(viewport={"width": 1920, "height": 1080},
+                                            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
         page = await context.new_page()
         page.set_default_timeout(90000)
 
@@ -107,50 +95,35 @@ async def login_one(email: str, password: str):
                 await page.wait_for_load_state("domcontentloaded", timeout=30000)
                 await asyncio.sleep(5)
 
-                # 检查是否已登录
                 if "client" in page.url and "login" not in page.url.lower():
                     print(f"[{email}] 已登录！")
                     result["success"] = True
                     break
 
-                # 等待输入框
                 await page.wait_for_selector(
                     'input[placeholder*="Email"], input[placeholder*="Username"], input[type="email"], input[type="text"]',
                     timeout=20000
                 )
-                print(f"[{email}] 检测到登录表单")
-
-                # 填写账号密码
                 await page.fill('input[placeholder*="Email"], input[placeholder*="Username"], input[type="email"], input[type="text"]', email)
                 await page.fill('input[placeholder*="Password"], input[type="password"]', password)
 
-                # 点击 “确认您是真人” 复选框
                 try:
                     await page.wait_for_selector('text=确认您是真人, input[type="checkbox"]', timeout=10000)
                     await page.click('text=确认您是真人')
-                    print(f"[{email}] 已勾选 '确认您是真人'")
                     await asyncio.sleep(3)
                 except:
-                    print(f"[{email}] 未检测到复选框或已自动通过")
+                    pass
 
-                # 点击登录按钮
                 await page.click('button:has-text("Log In")')
-                print(f"[{email}] 已点击登录按钮")
-
-                # 等待跳转到仪表板
                 await page.wait_for_url("**/client**", timeout=30000)
-                print(f"[{email}] 登录成功！")
                 result["success"] = True
                 break
 
             except Exception as e:
-                print(f"[{email}] 尝试 {attempt + 1} 失败: {e}")
                 if attempt < max_retries:
                     await context.close()
-                    context = await browser.new_context(
-                        viewport={"width": 1920, "height": 1080},
-                        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
-                    )
+                    context = await browser.new_context(viewport={"width": 1920, "height": 1080},
+                                                        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
                     page = await context.new_page()
                     await asyncio.sleep(2)
                 else:
@@ -158,22 +131,14 @@ async def login_one(email: str, password: str):
                     await page.screenshot(path=screenshot, full_page=True)
                     await tg_notify_photo(
                         screenshot,
-                        caption=f"Wispbyte 登录失败\n"
-                                f"账号: <code>{email}</code>\n"
-                                f"错误: <i>{str(e)[:200]}</i>\n"
-                                f"URL: {page.url}"
+                        caption=f"Wispbyte 登录失败\n账号: <code>{email}</code>\n错误: <i>{str(e)[:200]}</i>\nURL: {page.url}"
                     )
-
-        # 关闭资源
         await context.close()
         await browser.close()
         return result
 
-# ===================== 主流程 =====================
 async def main():
     start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"登录任务开始: {start_time}")
-
     accounts_str = os.getenv("LOGIN_ACCOUNTS")
     if not accounts_str:
         await tg_notify("Failed: 未配置任何账号")
@@ -184,11 +149,7 @@ async def main():
         await tg_notify("Failed: LOGIN_ACCOUNTS 格式错误，应为 email:password")
         return
 
-    tasks = []
-    for acc in accounts:
-        email, pwd = acc.split(":", 1)
-        tasks.append(login_one(email, pwd))
-
+    tasks = [login_one(email, pwd) for email, pwd in (acc.split(":", 1) for acc in accounts)]
     results = await asyncio.gather(*tasks)
 
     end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -196,10 +157,9 @@ async def main():
     await tg_notify(final_msg)
     print(final_msg)
 
-# ===================== 启动 =====================
 if __name__ == "__main__":
-    print(f"[{datetime.now()}] login.py 开始运行", file=sys.stderr)
     accounts = os.getenv('LOGIN_ACCOUNTS', '').strip()
     count = len([a for a in accounts.split(',') if ':' in a]) if accounts else 0
+    print(f"[{datetime.now()}] login.py 开始运行", file=sys.stderr)
     print(f"Python: {sys.version.split()[0]}, 有效账号数: {count}", file=sys.stderr)
     asyncio.run(main())
