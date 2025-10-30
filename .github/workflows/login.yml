@@ -1,5 +1,7 @@
 name: Wispbyte Auto Login
-timeout-minutes: 30
+
+timeout-minutes: 15
+
 on:
   schedule:
     - cron: '0 20 */2 * *'
@@ -8,7 +10,6 @@ on:
 jobs:
   login:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
