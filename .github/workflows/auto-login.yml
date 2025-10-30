@@ -19,9 +19,9 @@ jobs:
           to: ${{ secrets.TG_CHAT_ID }}
           token: ${{ secrets.TG_BOT_TOKEN }}
           message: |
-            *Wispbyte 任务已启动！*
+           " *Wispbyte 任务已启动！*
             预计 8–12 分钟完成
-            查看：https://github.com/{{ github.repository }}/actions/runs/{{ github.run_id }}
+            查看：https://github.com/{{ github.repository }}/actions/runs/{{ github.run_id }}"
           format: Markdown
 
       - name: Set up Python
