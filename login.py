@@ -1,5 +1,5 @@
-# login.py
 import os
+import sys
 import asyncio
 import aiohttp
 from datetime import datetime
@@ -65,13 +65,13 @@ def build_report(results, start_time, end_time):
     ]
 
     if success:
-        lines.append("Success 成功：")
-        lines.extend([f"   • <code>{r['email']}</code>" for r in success])
+        lines.append("✅ 成功账号：")
+        lines.extend([f"• <code>{r['email']}</code>" for r in success])
         lines.append("")
 
     if failed:
-        lines.append("Failed 失败：")
-        lines.extend([f"   • <code>{r['email']}</code>" for r in failed])
+        lines.append("❌ 失败账号：")
+        lines.extend([f"• <code>{r['email']}</code>" for r in failed])
 
     return "\n".join(lines)
 
@@ -156,7 +156,8 @@ async def login_one(email: str, password: str):
                 else:
                     screenshot = f"error_{email.replace('@', '_')}_{int(datetime.now().timestamp())}.png"
                     await page.screenshot(path=screenshot, full_page=True)
-                    await tg_notify_photo(screenshot,
+                    await tg_notify_photo(
+                        screenshot,
                         caption=f"Wispbyte 登录失败\n"
                                 f"账号: <code>{email}</code>\n"
                                 f"错误: <i>{str(e)[:200]}</i>\n"
@@ -197,12 +198,8 @@ async def main():
 
 # ===================== 启动 =====================
 if __name__ == "__main__":
-    import sys
-    import datetime
-
-    print(f"[{datetime.datetime.now()}] login.py 开始运行", file=sys.stderr)
+    print(f"[{datetime.now()}] login.py 开始运行", file=sys.stderr)
     accounts = os.getenv('LOGIN_ACCOUNTS', '').strip()
     count = len([a for a in accounts.split(',') if ':' in a]) if accounts else 0
     print(f"Python: {sys.version.split()[0]}, 有效账号数: {count}", file=sys.stderr)
-
     asyncio.run(main())
