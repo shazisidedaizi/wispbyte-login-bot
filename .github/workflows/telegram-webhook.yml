@@ -61,6 +61,14 @@ jobs:
                 -d parse_mode="Markdown"
               echo "重试失败：$BODY"
             fi
+            # 处理 /start 命令（欢迎语）
+            if [ "$MESSAGE_TEXT" = "/start" ] && [ "$CHAT_ID" = "$TG_CHAT_ID" ]; then
+              curl -s -X POST "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
+                   -d chat_id="$CHAT_ID" \
+                   -d text="Bot 已就绪！发 /retry 重试登录任务" \
+                   -d parse_mode="Markdown"
+            echo "已发送欢迎消息到 Chat ID: $CHAT_ID"
+            fi
           else
             echo "忽略：未知命令 ($MESSAGE_TEXT) 或按钮 ($CALLBACK_DATA)，Chat ID 不匹配"
           fi
