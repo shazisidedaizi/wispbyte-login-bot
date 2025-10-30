@@ -8,29 +8,18 @@ on:
 jobs:
   poll:
     runs-on: ubuntu-latest
+    outputs:
+      new_offset: ${{ steps.save.outputs.new_offset }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # 关键修复：continue-on-error + 默认值
-      - name: Download last_offset.txt
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: telegram-offset
-          path: .
-
-      # 关键修复：如果没下载到文件，创建默认值
-      - name: Initialize Offset
-        id: init
+      - name: Load Offset from GITHUB_STATE
+        id: load
         run: |
-          if [ -f "last_offset.txt" ]; then
-            OFFSET=$(cat last_offset.txt)
-            echo "Loaded existing offset: $OFFSET"
-          else
+          OFFSET="${{ env.TELEGRAM_OFFSET }}"
+          if [ -z "$OFFSET" ] || [ "$OFFSET" = "null" ]; then
             OFFSET=0
-            echo "0" > last_offset.txt
-            echo "Created new offset: 0"
+            echo "First run, starting from offset: 0"
+          else
+            echo "Loaded offset from previous run: $OFFSET"
           fi
           echo "offset=$OFFSET" >> $GITHUB_OUTPUT
 
@@ -39,7 +28,7 @@ jobs:
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         run: |
-          OFFSET=${{ steps.init.outputs.offset }}
+          OFFSET=${{ steps.load.outputs.offset }}
           echo "Polling from offset: $OFFSET"
           UPDATES=$(curl -s "https://api.telegram.org/bot$TG_BOT_TOKEN/getUpdates?offset=$OFFSET&limit=20")
           echo "updates<<EOF" >> $GITHUB_OUTPUT
@@ -47,20 +36,14 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
           MAX_ID=$(echo "$UPDATES" | jq -r '.result[].update_id' | sort -nr | head -1)
           if [ "$MAX_ID" != "null" ] && [ -n "$MAX_ID" ]; then
-            echo "new_offset=$((MAX_ID + 1))" >> $GITHUB_ENV
+            NEW_OFFSET=$((MAX_ID + 1))
+            echo "New offset: $NEW_OFFSET"
           else
-            echo "new_offset=$OFFSET" >> $GITHUB_ENV
+            NEW_OFFSET=$OFFSET
+            echo "No new updates"
           fi
-
-      # 关键修复：强制上传 artifact
-      - name: Upload Offset Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: telegram-offset
-          path: last_offset.txt
-          retention-days: 7  # 保留 7 天
-          if-no-files-found: error
+          echo "new_offset=$NEW_OFFSET" >> $GITHUB_OUTPUT
+          echo "TELEGRAM_OFFSET=$NEW_OFFSET" >> $GITHUB_STATE
 
       - name: Respond to /start
         if: contains(steps.updates.outputs.updates, '/start')
@@ -80,6 +63,7 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
+          echo "检测到 /retry，触发主任务"
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer $GH_PAT" \
             -H "Accept: application/vnd.github.v3+json" \
@@ -96,8 +80,8 @@ jobs:
               -d text="触发失败：HTTP $HTTP_CODE"
           fi
 
-      - name: Debug
-        if: always()
+      - name: Save Offset for Next Run
+        id: save
         run: |
-          echo "Final offset: ${{ env.new_offset }}"
-          echo "Artifact should now be available for next run"
+          echo "new_offset=${{ steps.updates.outputs.new_offset }}" >> $GITHUB_OUTPUT
+          echo "Offset saved to GITHUB_STATE: ${{ steps.updates.outputs.new_offset }}"
