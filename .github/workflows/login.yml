@@ -8,7 +8,7 @@ on:
 jobs:
   login:
     runs-on: ubuntu-latest
-    timeout-minutes: 15   # 15 分钟后自动取消
+    timeout-minutes: 10   # 10 分钟后自动取消
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,7 +24,7 @@ jobs:
           playwright install chromium --with-deps
 
       - name: Run login script
-        timeout-minutes: 8   # 只给脚本 8 分钟
+        timeout-minutes: 5   # 只给脚本 8 分钟
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
